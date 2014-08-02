@@ -41,3 +41,10 @@ server {
     }
 }
 ```
+
+test
+===
+```
+telnet 127.0.0.1 8000
+curl --proxy 127.0.0.1:8000 -I http://www.example.com/
+```
