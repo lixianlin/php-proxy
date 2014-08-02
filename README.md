@@ -1,6 +1,7 @@
 php-proxy
 ===
-A simple php proxy server
+A simple php proxy server, used to download web pages, web images, game resources, ...
+Also can used to filter ads, modify data, ...
 
 apache config
 ===
@@ -40,6 +41,12 @@ server {
         include         fastcgi_params;
     }
 }
+```
+
+browser config
+===
+```
+set proxy to 127.0.0.1:8000
 ```
 
 test
