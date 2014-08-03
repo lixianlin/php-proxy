@@ -95,16 +95,23 @@ class Proxy {
      */
     private $mimeTypeArr = array(
         'text/html' => 'htm',
+        'text/xml' => 'xml',
         'application/xml' => 'xml',
+        'text/plain' => 'txt',
         'text/csv' => 'csv',
+        'text/javascript' => 'js',
         'application/javascript' => 'js',
+        'application/x-javascript' => 'js',
+        'text/json' => 'json',
+        'application/json' => 'json',
         'text/css' => 'css',
         'image/jpeg' => 'jpg',
         'image/png' => 'png',
-        'imgae/gif' => 'gif',
+        'image/gif' => 'gif',
         'application/x-shockwave-flash' => 'swf',
         'application/zip' => 'zip',
         'application/x-rar-compressed' => 'rar',
+        'application/x-gzip' => 'gz',
     );
 
     /**
@@ -187,11 +194,8 @@ class Proxy {
         }
         foreach ($_SERVER as $key => $val) {
             if (strpos($key, 'HTTP_') === 0) {
-                $arr = explode('_', substr($key, 5));
-                foreach ($arr as $key2 => $val2) {
-                    $arr[$key2] = ucfirst(strtolower($val2));
-                }
-                $newKey = implode('-', $arr);
+                $newKey = strtolower(str_replace('_', ' ', substr($key, 5)));
+                $newKey = str_replace(' ', '-', ucwords($newKey));
                 $this->requestHeaders[$newKey] = $val;
             }
         }
@@ -301,7 +305,7 @@ class Proxy {
             }
             if ($directOutput === NULL) {
                 if (preg_match('/Content\-Length:[\s]*([0-9]+)/i', $str, $m)) {
-                    $directOutput = $m[1] > 20 * 1024 * 1024;
+                    $directOutput = $m[1] > 10 * 1024 * 1024;
                     if ($directOutput) {
                         list($header, $body) = explode("\r\n\r\n", $str);
                         $arr = explode("\r\n", $header);
@@ -398,7 +402,7 @@ class Proxy {
         if (function_exists('gzdecode')) {
             return gzdecode($data);
         }
-        $filename = dirname(__FILE__) . DIRECTORY_SEPARATOR . rand() . 'tmp.gz';
+        $filename = dirname(__FILE__) . DIRECTORY_SEPARATOR . sprintf('%d-%d.tmp', time(), rand());
         file_put_contents($filename, $data);
         ob_start();
         readgzfile($filename);
@@ -501,12 +505,16 @@ class Proxy {
             if (stripos($val, 'Content-Length:') === 0) {
                 continue;
             }
-            if (stripos($val, 'Content-Encoding:') === 0 || stripos($val, 'Transfer-Encoding') === 0) {
-                if (isset($hasDecoded)) {
+            if (isset($hasDecoded)) {
+                if (stripos($val, 'Content-Encoding:') === 0 || stripos($val, 'Transfer-Encoding') === 0) {
                     continue;
                 }
             }
-            header($val);
+            if (stripos($val, 'X-Powered-By:') === 0) {
+                header($val);
+            } else {
+                header($val, false);
+            }
         }
         echo $body;
     }
@@ -521,7 +529,7 @@ class Proxy {
         $body = $this->requestBody;
         $responseData = $this->doHttpRequest($method, $url, $headersArr, $body);
         $this->parseResponseData($responseData);
-        //$this->saveResponseBody();
+        $this->saveResponseBody();
         $this->output();
     }
 }
