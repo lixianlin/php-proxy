@@ -112,6 +112,7 @@ class Proxy {
      */
     public function __construct() {
         $this->cachePath = dirname(__FILE__) . DIRECTORY_SEPARATOR . 'cache';
+        set_error_handler(array($this, 'errorHandler'));
         $this->parseRequestUri();
         $this->parseRequestHeaders();
         $this->parseRequestBody();
@@ -141,9 +142,21 @@ class Proxy {
     private function logError($msg) {
         call_user_func_array(array($this, 'log'), func_get_args());
         $this->log($this->requestUri);
-        $this->log(var_export($_SERVER, true));
+        //$this->log(var_export($_SERVER, true));
         header('HTTP/1.1 503 Service Unavailable');
         exit;
+    }
+
+    /**
+     * error handler
+     * @param int $errNo
+     * @param string $errStr
+     * @param string $errFile
+     * @param int $errLine
+     */
+    private function errorHandler($errNo, $errStr, $errFile, $errLine) {
+        $msg = sprintf('Error(%d): %s in %s on line %d', $errNo, $errStr, $errFile, $errLine);
+        $this->logError($msg);
     }
 
     /**
@@ -223,7 +236,7 @@ class Proxy {
      * @param string $body
      * @return string
      */
-    public function doHttpRequest($method, $url, $headersArr, $body) {
+    private function doHttpRequest($method, $url, $headersArr, $body) {
         $urlArr = parse_url($url);
         $scheme = isset($urlArr['scheme']) ? $urlArr['scheme'] : '';
         switch ($scheme) {
@@ -264,7 +277,7 @@ class Proxy {
             $dataArr[] = "\r\n";
         }
         $dataStr = implode("\r\n", $dataArr);
-        $fp = @fsockopen($host, $port, $errNo, $errStr, self::SOCKET_CONNECT_TIMEOUT);
+        $fp = fsockopen($host, $port, $errNo, $errStr, self::SOCKET_CONNECT_TIMEOUT);
         if (!$fp) {
             $this->logError('fsockopen(%s:%s) fail(%s)!', $host, $port, $errStr);
             return;
@@ -276,13 +289,14 @@ class Proxy {
         $responseData = '';
         $directOutput = NULL;
         while (!feof($fp)) {
-            $statusArr = stream_get_meta_data($fp);
-            if ($statusArr['timed_out']) {
-                $this->logError('read socket timeout!');
-                return;
-            }
             $str = fread($fp, 8192);
             if ($str === false) {
+                $statusArr = stream_get_meta_data($fp);
+                if ($statusArr['timed_out']) {
+                    $this->log('read socket timeout!');
+                    $this->log(var_export($statusArr, true));
+                    continue;
+                }
                 break;
             }
             if ($directOutput === NULL) {
@@ -453,9 +467,13 @@ class Proxy {
             return;
         }
         $urlArr = parse_url($this->requestUri);
-        $filename = str_replace(':', '-', $urlArr['host']) . $urlArr['path'];
-        if (preg_match('#/$#', $urlArr['path'])) {
-            $filename .= sprintf('index-%08x.%s', crc32($this->requestUri), $this->getFileExt());
+        $path = $urlArr['path'];
+        $ext = $this->getFileExt();
+        $filename = str_replace(':', '-', $urlArr['host']) . $path;
+        if (preg_match('#/$#', $path)) {
+            $filename .= sprintf('index-%08x.%s', crc32($this->requestUri), $ext);
+        } else if (strpos(basename($path), '.') === false) {
+            $filename .= '.' . $ext;
         }
         $filename = $this->cachePath . DIRECTORY_SEPARATOR . $this->getValidFilename($filename);
         $dir = dirname($filename);
@@ -463,9 +481,6 @@ class Proxy {
             mkdir($dir, 0777, true);
         }
         $body = $this->getDecodedResponseBody();
-        if (is_dir($filename)) {
-            $filename .= '.' . $this->getFileExt();
-        }
         file_put_contents($filename, $body);
     }
 
@@ -477,7 +492,8 @@ class Proxy {
         if ($ext === 'htm') {
             $hasDecoded = true;
             $body = $this->getDecodedResponseBody();
-            $body = preg_replace('/(<body[^>]*>)/i', '$1<div style="position:fixed;z-index:9999;right:0;bottom:0;color:#f00;">proxy</div>', $body);
+            $body = preg_replace('#(</body>)#i', '<div style="position:fixed;z-index:9999;right:0;bottom:0;color:#f00;">proxy</div>$1', $body);
+            //$body = preg_replace('#(<script[^>]*>[\s\S]*?</script>)#i', '<!--$1-->', $body);
         } else {
             $body = $this->responseBody;
         }
